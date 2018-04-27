@@ -15,14 +15,6 @@
 
 using namespace std;
 
-
-//this is the generator function to generate random double number
-double generator()
-{
-	int myNum = std::rand();
-	return (double)myNum* 0.1/std::numeric_limits<int>::max();
-}
-
 class serialGA
 {
 private:
@@ -46,6 +38,7 @@ public:
 	~serialGA(){}
 	void operate();
 	bool readMatrix(vector<double> &matrix,string fromFile);
+	void printMatrix(vector<double> &matrix);
 	void printOutput();
 	void defineParameters();
 	void copyPrevBest(int myIndex);

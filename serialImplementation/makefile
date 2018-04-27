@@ -4,6 +4,11 @@
 ##########################################################
 CC=g++
 DEPS=serialGA.h
+CFLAGS=
+OBJ=serialGA.o main.o
 
-serial: main.cpp serialGA.cpp $(DEPS)
-	$(CC) -o serial main.cpp serialGA.cpp $(DEPS)
+%.o: %.cpp $(DEPS)
+	$(CC) -c -o $@ $< $(CFLAGS)
+
+serial: $(OBJ)
+	$(CC) -o $@ $^ $(CFLAGS)

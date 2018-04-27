@@ -1,5 +1,12 @@
 #include "serialGA.h"
 
+//this is the generator function to generate random double number
+double generator()
+{
+	int myNum = std::rand();
+	return (double)myNum* 0.1/std::numeric_limits<int>::max();
+}
+
 //this function defines the initial parameters that are to be constant
 void serialGA::defineParameters()
 {
@@ -18,16 +25,16 @@ void serialGA::defineParameters()
 	dim1 = 11;
 	dim2 = 11;
 
-	initialTempData.reserve(dim2*dim1);
-	refTempData.reserve(dim2*dim1);
-	tempTempData.reserve(dim2*dim1);
-	finalTempData.reserve(dim2*dim1);
+	initialTempData.resize(dim2*dim1,0);
+	refTempData.resize(dim2*dim1,0);
+	tempTempData.resize(dim2*dim1,0);
+	finalTempData.resize(dim2*dim1,0);
 
-	population.reserve(popSize*dim1*dim2);
-	nextPopulation.reserve(popSize*dim1*dim2);
-	objFunction.reserve(popSize);
-	nextObjFunction.reserve(popSize);
-	bestMember.reserve(dim1*dim2);
+	population.resize(popSize*dim1*dim2,0);
+	nextPopulation.resize(popSize*dim1*dim2,0);
+	objFunction.resize(popSize,0);
+	nextObjFunction.resize(popSize,0);
+	bestMember.resize(dim1*dim2,0);
 
 #if DEBUG_STATEMENTS
 	cout<<"Defining the parameters successful.."<<endl;
@@ -149,6 +156,19 @@ void serialGA::initPopulation()
 	std::srand(time(0));
 	std::generate(population.begin(),population.end(),generator);
 
+#if DEBUG_STATEMENTS
+	cout<<"Printing one randon instance of population"<<endl;
+	int idx = rand()%popSize;
+	for(int i=0;i<dim1;i++)
+	{
+		for(int j=0;j<dim2;j++)
+		{
+			cout<<population[idx*dim1*dim2+(i*dim2+j)]<<" ";
+		}
+		cout<<endl;
+	}
+#endif
+
 	for(int i=0;i<popSize;i++)
 	{
 		double timeStart = 0.0;
@@ -158,6 +178,18 @@ void serialGA::initPopulation()
 		calculateTemp(0.0,i);
 		//this fitness functin is based on the tempTempData and refTempData
 		objFunction[i] = fitnessFunction();
+	}
+}
+
+void serialGA::printMatrix(vector<double> &myMatrix)
+{
+	for(int i=0;i<dim1;i++)
+	{
+		for(int j=0;j<dim2;j++)
+		{
+			cout<<myMatrix[i*dim2+j]<<" ";
+		}
+		cout<<endl;
 	}
 }
 
@@ -184,11 +216,19 @@ void serialGA::operate()
 		cout<<"Initial temperature matrix read unsuccessful...."<<endl;
 		return;
 	}
+#if DEBUG_STATEMENTS
+	cout<<"The read initialTempData matrix is::"<<endl;
+	printMatrix(initialTempData);
+#endif
 	if(!readMatrix(refTempData,refTempFile))
 	{
 		cout<<"Reference temperature matrix read unsuccessful...."<<endl;
 		return;
 	}
+#if DEBUG_STATEMENTS
+	cout<<"The read finalTempData matrix is::"<<endl;
+	printMatrix(finalTempData);
+#endif
 
 	//initialize the population
 	// with random values for the first generation, other generations will derive from this generaiton
