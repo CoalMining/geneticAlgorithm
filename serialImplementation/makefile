@@ -5,5 +5,5 @@
 CC=g++
 DEPS=serialGA.h
 
-serial: main.cpp $(DEPS)
-	$(CC) -o serial main.cpp $(DEPS)
+serial: main.cpp serialGA.cpp $(DEPS)
+	$(CC) -o serial main.cpp serialGA.cpp $(DEPS)
