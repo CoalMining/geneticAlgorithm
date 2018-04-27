@@ -5,8 +5,12 @@
 
 #include <iostream>
 #include <string>
+#include <limits>
+#include <cmath>
 #include <fstream>
 #include <vector>
+#include <algorithm>
+#include <cstdlib>
 #include <ctime>
 
 using namespace std;
@@ -14,12 +18,12 @@ using namespace std;
 class serialGA
 {
 private:
-	string initialTempFile,finalTempFile;
+	string initialTempFile,refTempFile;
 	
-	double probCrossover,probMutation,deltaX,deltaY,deltaZ,endTime,bestObjFunction;
+	double probCrossover,probMutation,deltaX,deltaY,deltaT,endTime,bestObjFunction;
 	int popSize,numGens,dim1,dim2;
 
-	vector<double> initialTempData,finalTempData;
+	vector<double> initialTempData,refTempData,tempTempData,finalTempData;
 	vector<double> population,objFunction,nextPopulation,nextObjFunction;
 	vector<double> bestMember;
 public:	
@@ -27,15 +31,24 @@ public:
 	{
 		defineParameters();
 	}
-	serialGA(string f1,string f2):initialTempFile(f1),finalTempFile(f2)
+	serialGA(string f1,string f2):initialTempFile(f1),refTempFile(f2)
 	{
 		defineParameters();
 	}
 	~serialGA(){}
 	void operate();
-	bool readMatrix(vector<double> &matrix,int d1,int d2,string fromFile);
+	bool readMatrix(vector<double> &matrix,string fromFile);
 	void printOutput();
 	void defineParameters();
+	void copyPrevBest(int myIndex);
+	void calculateTemp(double t,int index);
+	double fitnessFunction();
+	void initPopulation();
+	void savePopMember(int myIndex);
+	void mutate(int myIndex);
+	void crossOver(int parentIndex1,int parentIndex2,int myIndex);
+	void selectParent(int &indexParent);
+	void selectParents(int &parentIndex1, int &parentIndex2, int indexMine);
 };
 
 //this function defines the initial parameters that are to be constant
@@ -57,6 +70,8 @@ void serialGA::defineParameters()
 	dim2 = 11;
 
 	initialTempData.reserve(dim2*dim1);
+	refTempData.reserve(dim2*dim1);
+	tempTempData.reserve(dim2*dim1);
 	finalTempData.reserve(dim2*dim1);
 
 	population.reserve(popSize*dim1*dim2);
@@ -70,9 +85,10 @@ void serialGA::defineParameters()
 #endif
 }
 
+
 //read fron file fromFile to the matrix
 // number of items read will be d1*d2
-bool serialGA::readMatrix(vector<double> &matrix,int& d1,int& d2,string fromFile)
+bool serialGA::readMatrix(vector<double> &matrix,string fromFile)
 {
 	fstream myFile(fromFile.c_str());
 	if(!myFile.is_open())
@@ -85,14 +101,14 @@ bool serialGA::readMatrix(vector<double> &matrix,int& d1,int& d2,string fromFile
 #endif
 
 	double tempVal  = 0.0;
-	for(int i=0;i<d1;i++)
+	for(int i=0;i<dim1;i++)
 	{
 		try
 		{
-			for(int j=0;j<d2;j++)
+			for(int j=0;j<dim2;j++)
 			{
 				myFile>>tempVal; 
-				matrix.push_back(tempVal);
+				matrix[i*dim2+j] = tempVal;
 			}
 		}
 		catch(...)
@@ -107,16 +123,102 @@ bool serialGA::readMatrix(vector<double> &matrix,int& d1,int& d2,string fromFile
 	return true;
 }
 
-//this function copies the population that has best objFunction value from the prevGen to firstItem of nextGen
-//copyPosition is the position or the population index that will be the copy of best member
-void serialGA::copyPrevBest(vector<double> &child,int copyPosition,int d1,int d2)
+//this function copies the best member to the next population member
+// position to be copied in the next population is identified by copyPosition
+void serialGA::copyPrevBest(int myIndex)
 {
-	for(int i=0;i<d1*d2;i++)
+	int startIndex = myIndex*dim1*dim2;
+	for(int i=0;i<dim1*dim2;i++)
 	{
-		child[copyPosition*d1*d2+i] = bestMember[i];
+		nextPopulation[startIndex+i] = bestMember[i];
 	}
-	nextObjFunction[copyPosition] = bestObjFunction;
+	nextObjFunction[myIndex] = bestObjFunction;
 }
+
+//this is the generator function to generate random double number
+double generator()
+{
+	int myNum = std::rand();
+	return (double)myNum* 0.1/std::numeric_limits<int>::max();
+}
+
+//this function calculates the final temperature over the time
+// time ranges from t to t+endTime with an increase of deltaT step
+// the result will be filled in the finalTempData
+// k is the population that we are using now
+void serialGA::calculateTemp(double t,int index)
+{
+	double finalTime = t+endTime;
+	int startIndex = index*dim1*dim2;
+
+	if(t==0)
+	{
+		//for the initial time instance
+		for(int i=0;i<dim1;i++)
+		{
+			for(int j=0;j<dim2;j++)
+			{
+				tempTempData[i*dim2+j] = initialTempData[i*dim2+j];
+			}
+		}
+	}
+	for(;t<=finalTime;t+=deltaT)
+	{
+		for(int i=1;i<dim1-1;i++)
+		{
+			for(int j=1;j<dim2-1;j++)
+			{
+				finalTempData[i*dim2+j] = tempTempData[i*dim2+j]+population[startIndex+i*dim2+j]*deltaT*
+				(
+					(
+						(tempTempData[(i+1)*dim2+j]-2.0*tempTempData[i*dim2+j]+tempTempData[(i-1)*dim2+j])/(deltaX*deltaX)
+					)+
+					(
+						(tempTempData[(i)*dim2+(j+1)]-2.0*tempTempData[i*dim2+j]+tempTempData[(i)*dim2+(j-1)])/(deltaY*deltaY)
+					)
+				);
+			}
+		}
+
+		for(int i=1;i<dim1-1;i++)
+		{
+			for(int j=1;j<dim2-1;j++)
+			{
+				tempTempData[i*dim2+j] = finalTempData[i*dim2+j];
+			}
+		}
+	}
+}
+
+double serialGA::fitnessFunction()
+{
+	double sumDiff = 0.0;
+	for(int i=0;i<dim2*dim1;i++)
+	{
+		double diff = refTempData[i]-finalTempData[i];
+		sumDiff+=(diff*diff);
+	}
+	return sqrt(sumDiff)/(dim2*dim1);
+}
+
+void serialGA::initPopulation()
+{
+	//use generate ti fill the elements in the population with random numbers
+	std::srand(time(0));
+	std::generate(population.begin(),population.end(),generator);
+
+	for(int i=0;i<popSize;i++)
+	{
+		double timeStart = 0.0;
+		//now calcualte the population or temperature
+		//this function goes through a series of iterations over time intervals and calculates
+		//.. the final temperature that will be for next generation
+		calculateTemp(0.0,i);
+		//this fitness functin is based on the tempTempData and refTempData
+		objFunction[i] = fitnessFunction();
+	}
+}
+
 //this is the main function that operates the GA 
 void serialGA::operate()
 {
@@ -125,27 +227,32 @@ void serialGA::operate()
 #endif
 
 	//make sure that the file names are there
-	if(initialTempFile==""||finalTempFile=="")
+	if(initialTempFile==""||refTempFile=="")
 	{
 		cout<<"The file names are empty...Please provide "<<endl;
 		cout<<"\n:Initial Temp file name"<<endl;
 		cin>>initialTempFile;
-		cout<<"\n:Final Temp file name"<<endl;
-		cin>>finalTempFile;
+		cout<<"\n:Reference Temp file name"<<endl;
+		cin>>refTempFile;
 	}
 
 	//read the data from files
-	if(!readMatrix(initialTempData,dim1,dim2,initialTempFile))
+	if(!readMatrix(initialTempData,initialTempFile))
 	{
 		cout<<"Initial temperature matrix read unsuccessful...."<<endl;
 		return;
 	}
-	if(!readMatrix(finalTempData,dim1,dim2,finalTempFile))
+	if(!readMatrix(refTempData,refTempFile))
 	{
-		cout<<"Final temperature matrix read unsuccessful...."<<endl;
+		cout<<"Reference temperature matrix read unsuccessful...."<<endl;
 		return;
 	}
 
+	//initialize the population
+	// with random values for the first generation, other generations will derive from this generaiton
+	initPopulation();
+
+	int parentIndex1,parentIndex2;
 	//perform main genetic algorithm operations here
 	//the operation will go for numGens times so..
 	for(int i=0;i<numGens;i++)
@@ -157,20 +264,123 @@ void serialGA::operate()
 			if(j==0)
 			{
 				//this method is called elitism
-				copyPrevBest(nextPopulation,j,dim1,dim2);
+				copyPrevBest(j);
 			}else
 			{
+				//for all the other members of the population, perform GA
 
+				//first select best parents
+				selectParents(parentIndex1,parentIndex2,j);
+				crossOver(parentIndex1,parentIndex2,j);
+				mutate(j);
+				calculateTemp(0.0,j);
+
+				nextObjFunction[j] = fitnessFunction();
+				if(nextObjFunction[j]>bestObjFunction)
+				{
+					savePopMember(j);
+				}
 			}
 		}
+
+		//copy the population and objective function to next population
+		nextObjFunction.swap(objFunction);
+		nextPopulation.swap(population);
 	}
 }
 
-//print the final matrix output
 void serialGA::printOutput()
 {
 #if DEBUG_STATEMENTS
 	cout<<"Print Output function called"<<endl;
 #endif
+	cout<<"The final obtained K matrix is "<<endl;
+	for(int i=0;i<dim1;i++)
+	{
+		for(int j=0;j<dim2;j++)
+		{
+			cout<<bestMember[i*dim2+j]<<" ";
+		}
+		cout<<endl;
+	}
 }
+
+void serialGA::savePopMember(int myIndex)
+{
+	int startIndex = myIndex*dim1*dim2;
+
+	for(int i=0;i<dim1*dim2;i++)
+	{
+		bestMember[i] = nextPopulation[startIndex+i];
+	}
+	bestObjFunction = nextObjFunction[myIndex];
+}
+
+void serialGA::mutate(int myIndex)
+{
+	int myNum = rand();
+	double nextNum = (double) myNum/std::numeric_limits<int>::max();
+
+	int mutationPoint;
+
+	if(nextNum<probMutation)
+	{
+		mutationPoint = rand()%popSize;
+		nextPopulation[myIndex*dim1*dim2] = generator();
+	}
+}
+
+void serialGA::crossOver(int parentIndex1,int parentIndex2,int myIndex)
+{
+	int startIndex = myIndex*dim1*dim2;
+	int crossPoint;
+
+	int myNum = rand();
+	double nextNum = (double) myNum/std::numeric_limits<int>::max();
+
+	if(nextNum<probCrossover)
+	{
+		//then crossover occurs
+		crossPoint = rand()%popSize;
+		for(int i=0;i<dim1*dim2;i++)
+		{
+			if(i<crossPoint)
+			{
+				nextPopulation[startIndex+i] = population[parentIndex1*dim1*dim2+i];
+			}else
+			{
+				nextPopulation[startIndex+i] = population[parentIndex2*dim1*dim2+i];
+			}
+		}
+
+	}else
+	{
+		//no crossover, just copy from one parent
+		for(int i=0;i<dim1*dim2;i++)
+		{
+			nextPopulation[startIndex+i] = population[parentIndex1*dim1*dim2+i];
+		}
+	}
+}
+
+void serialGA::selectParent(int &indexParent)
+{
+	int p1,p2;
+	
+	p1 = rand()%popSize;
+	p2 = rand()%popSize;
+	if(objFunction[p1]>objFunction[p2])
+		indexParent = p1;
+	else
+		indexParent = p2;
+}
+void serialGA::selectParents(int &parentIndex1, int &parentIndex2, int indexMine)
+{
+	selectParent(parentIndex1);
+	do
+	{
+		selectParent(parentIndex2);
+	}while(parentIndex1==parentIndex2);
+}
+
 #endif
