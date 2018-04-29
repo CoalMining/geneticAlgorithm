@@ -19,7 +19,7 @@ void serialGA::defineParameters()
 	deltaY = 0.1;
 	deltaT = 0.01;
 	popSize = 4000;
-	numGens = 200;
+	numGens = 5000;
 	endTime = 1.0;
 
 	dim1 = 11;
@@ -30,12 +30,14 @@ void serialGA::defineParameters()
 	tempTempData.resize(dim2*dim1,0);
 	finalTempData.resize(dim2*dim1,0);
 
+	bestFinalTempApprox.resize(dim2*dim1,0);
+
 	population.resize(popSize*dim1*dim2,0);
 	nextPopulation.resize(popSize*dim1*dim2,0);
 	objFunction.resize(popSize,0);
 	nextObjFunction.resize(popSize,0);
 	bestMember.resize(dim1*dim2,0);
-	bestMemberRMSE.resize(popSize,0);
+	bestMemberRMSE.resize(numGens,0);
 
 	bestObjFunction = std::numeric_limits<double>::max();
 
@@ -44,7 +46,13 @@ void serialGA::defineParameters()
 #endif
 }
 
-
+void serialGA::saveMatrix(const vector<double> &source, vector<double> &destination)
+{
+	for(int i=0;i<dim1*dim2;i++)
+	{
+		destination[i] = source[i];
+	}
+}
 //read fron file fromFile to the matrix
 // number of items read will be d1*d2
 bool serialGA::readMatrix(vector<double> &matrix,string fromFile)
@@ -92,6 +100,13 @@ void serialGA::copyPrevBest(int myIndex)
 		nextPopulation[startIndex+i] = bestMember[i];
 	}
 	nextObjFunction[myIndex] = bestObjFunction;
+
+	saveMatrix(finalTempData,bestFinalTempApprox);
+
+#if DEBUG_STATEMENTS
+	cout<<"Printing the best matix being passed from one generation to other"<<endl;
+	printMatrix(bestMember);
+#endif
 }
 
 //this function calculates the final temperature over the time
@@ -150,7 +165,11 @@ double serialGA::fitnessFunction()
 		double diff = refTempData[i]-finalTempData[i];
 		sumDiff+=(diff*diff);
 	}
-	return sqrt(sumDiff)/(dim2*dim1);
+	sumDiff = sqrt(sumDiff)/(dim2*dim1);
+#if DEBUG_STATEMENTS
+	cout<<"fitness Value is: "<<sumDiff<<" ("<<bestObjFunction<<")"<<endl;
+#endif
+	return sumDiff;
 }
 
 void serialGA::saveInitPopMember(int myIndex)
@@ -169,7 +188,6 @@ void serialGA::initPopulation()
 	//use generate ti fill the elements in the population with random numbers
 	std::srand(time(0));
 	std::generate(population.begin(),population.end(),generator);
-	std::generate(nextPopulation.begin(),nextPopulation.end(),generator);
 
 #if DEBUG_STATEMENTS
 	cout<<"Printing one random instance of population"<<endl;
@@ -198,6 +216,10 @@ void serialGA::initPopulation()
 			saveInitPopMember(i);
 		}
 	}
+#if DEBUG_STATEMENTS
+	cout<<"The initial best matrix is:"<<endl;
+	printMatrix(bestMember);
+#endif
 }
 
 void serialGA::printMatrix(vector<double> &myMatrix)
@@ -223,10 +245,10 @@ void serialGA::operate()
 	if(initialTempFile==""||refTempFile=="")
 	{
 		cout<<"The file names are empty...Please provide "<<endl;
-		cout<<"\n:Initial Temp file name"<<endl;
-		cin>>initialTempFile;
-		cout<<"\n:Reference Temp file name"<<endl;
-		cin>>refTempFile;
+		initialTempFile = "U_InitialTemp.dat";
+		cout<<"\n:Initial Temp file name is "<<initialTempFile<<endl;
+		refTempFile = "U_FinalTemp.dat";
+		cout<<"\n:Reference Temp file name is "<<refTempFile<<endl;
 	}
 
 	//read the data from files
@@ -258,29 +280,33 @@ void serialGA::operate()
 	//the operation will go for numGens times so..
 	for(int i=0;i<numGens;i++)
 	{
+
+#if DEBUG_STATEMENTS
+		cout<<"*********************************************"<<endl;
+		cout<<"*********Generation "<<i<<" started**********"<<endl;
+		cout<<"*********************************************"<<endl;
+#endif
+		//for the first member of this generation, let us copy the best member from the previous generation
+		//this method is called elitism
+		copyPrevBest(0);
+
 		//perform for each member of the current generation ie for each population
-		for(int j=0;j<popSize;j++)
+		//for all the other members of the population, perform GA
+		for(int j=1;j<popSize;j++)
 		{
-			//for the first member of this generation, let us copy the best member from the previous generation
-			if(j==0)
-			{
-				//this method is called elitism
-				copyPrevBest(j);
-			}else
-			{
-				//for all the other members of the population, perform GA
+			//first select best parents
+			selectParents(parentIndex1,parentIndex2,j);
+			crossOver(parentIndex1,parentIndex2,j);
+			mutate(j);
+			calculateTemp(0.0,j);
 
-				//first select best parents
-				selectParents(parentIndex1,parentIndex2,j);
-				crossOver(parentIndex1,parentIndex2,j);
-				mutate(j);
-				calculateTemp(0.0,j);
-
-				nextObjFunction[j] = fitnessFunction();
-				if(nextObjFunction[j]<bestObjFunction)
-				{
-					savePopMember(j);
-				}
+			nextObjFunction[j] = fitnessFunction();
+			if(nextObjFunction[j]<bestObjFunction)
+			{
+#if DEBUG_STATEMENTS
+				cout<<"The best member is changed...index is "<<j<<" and fitness value is "<<nextObjFunction[j]<<endl;
+#endif
+				savePopMember(j);
 			}
 		}
 
@@ -290,6 +316,10 @@ void serialGA::operate()
 		nextObjFunction.swap(objFunction);
 		nextPopulation.swap(population);
 	}
+#if DEBUG_STATEMENTS
+	cout<<"The final best approximation of temperature is "<<endl;
+	printMatrix(bestFinalTempApprox);
+#endif
 }
 
 void serialGA::printOutput()
@@ -314,6 +344,7 @@ void serialGA::printOutput()
 		bestRMSE<<i<<","<<bestMemberRMSE[i]<<endl;
 	}
 	bestRMSE.close();
+	cout<<"Writing completed"<<endl;
 #endif
 }
 
@@ -330,6 +361,7 @@ void serialGA::savePopMember(int myIndex)
 
 void serialGA::mutate(int myIndex)
 {
+	//rand in range 0 to 1 double
 	int myNum = rand();
 	double nextNum = (double) myNum/std::numeric_limits<int>::max();
 
@@ -337,6 +369,9 @@ void serialGA::mutate(int myIndex)
 
 	if(nextNum<probMutation)
 	{
+#if DEBUG_STATEMENTS
+		cout<<"Mutation occurred"<<endl;
+#endif
 		mutationPoint = rand()%popSize;
 		nextPopulation[myIndex*dim1*dim2] = generator();
 	}
@@ -347,6 +382,7 @@ void serialGA::crossOver(int parentIndex1,int parentIndex2,int myIndex)
 	int startIndex = myIndex*dim1*dim2;
 	int crossPoint;
 
+//	random number in range 0 to 1 double
 	int myNum = rand();
 	double nextNum = (double) myNum/std::numeric_limits<int>::max();
 
@@ -393,4 +429,8 @@ void serialGA::selectParents(int &parentIndex1, int &parentIndex2, int indexMine
 	{
 		selectParent(parentIndex2);
 	}while(parentIndex1==parentIndex2);
+
+#if DEBUG_STATEMENTS
+	cout<<"Parents selected are: "<<parentIndex1<<" and "<<parentIndex2<<endl;
+#endif
 }

@@ -23,7 +23,7 @@ private:
 	double probCrossover,probMutation,deltaX,deltaY,deltaT,endTime,bestObjFunction;
 	int popSize,numGens,dim1,dim2;
 
-	vector<double> initialTempData,refTempData,tempTempData,finalTempData;
+	vector<double> initialTempData,refTempData,tempTempData,finalTempData,bestFinalTempApprox;
 	vector<double> population,objFunction,nextPopulation,nextObjFunction;
 	vector<double> bestMember,bestMemberRMSE;
 public:	
@@ -43,6 +43,7 @@ public:
 	void defineParameters();
 	void copyPrevBest(int myIndex);
 	void calculateTemp(double t,int index);
+	void saveMatrix(const vector<double> &src,vector<double> &destination);
 	double fitnessFunction();
 	void initPopulation();
 	void savePopMember(int myIndex);
