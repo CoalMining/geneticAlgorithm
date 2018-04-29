@@ -25,7 +25,7 @@ private:
 
 	vector<double> initialTempData,refTempData,tempTempData,finalTempData;
 	vector<double> population,objFunction,nextPopulation,nextObjFunction;
-	vector<double> bestMember;
+	vector<double> bestMember,bestMemberRMSE;
 public:	
 	serialGA()
 	{
@@ -46,6 +46,7 @@ public:
 	double fitnessFunction();
 	void initPopulation();
 	void savePopMember(int myIndex);
+	void saveInitPopMember(int myIndex);
 	void mutate(int myIndex);
 	void crossOver(int parentIndex1,int parentIndex2,int myIndex);
 	void selectParent(int &indexParent);

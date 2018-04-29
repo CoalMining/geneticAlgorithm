@@ -18,8 +18,8 @@ void serialGA::defineParameters()
 	deltaX = 0.1;
 	deltaY = 0.1;
 	deltaT = 0.01;
-	popSize = 400;
-	numGens = 2000;
+	popSize = 4000;
+	numGens = 200;
 	endTime = 1.0;
 
 	dim1 = 11;
@@ -35,6 +35,9 @@ void serialGA::defineParameters()
 	objFunction.resize(popSize,0);
 	nextObjFunction.resize(popSize,0);
 	bestMember.resize(dim1*dim2,0);
+	bestMemberRMSE.resize(popSize,0);
+
+	bestObjFunction = std::numeric_limits<double>::max();
 
 #if DEBUG_STATEMENTS
 	cout<<"Defining the parameters successful.."<<endl;
@@ -100,7 +103,7 @@ void serialGA::calculateTemp(double t,int index)
 	double finalTime = t+endTime;
 	int startIndex = index*dim1*dim2;
 
-	if(t==0)
+	if(t==0.0)
 	{
 		//for the initial time instance
 		for(int i=0;i<dim1;i++)
@@ -150,14 +153,26 @@ double serialGA::fitnessFunction()
 	return sqrt(sumDiff)/(dim2*dim1);
 }
 
+void serialGA::saveInitPopMember(int myIndex)
+{
+	int startIndex = myIndex*dim1*dim2;
+
+	for(int i=0;i<dim1*dim2;i++)
+	{
+		bestMember[i] = population[startIndex+i];
+	}
+	bestObjFunction = objFunction[myIndex];
+}
+
 void serialGA::initPopulation()
 {
 	//use generate ti fill the elements in the population with random numbers
 	std::srand(time(0));
 	std::generate(population.begin(),population.end(),generator);
+	std::generate(nextPopulation.begin(),nextPopulation.end(),generator);
 
 #if DEBUG_STATEMENTS
-	cout<<"Printing one randon instance of population"<<endl;
+	cout<<"Printing one random instance of population"<<endl;
 	int idx = rand()%popSize;
 	for(int i=0;i<dim1;i++)
 	{
@@ -178,6 +193,10 @@ void serialGA::initPopulation()
 		calculateTemp(0.0,i);
 		//this fitness functin is based on the tempTempData and refTempData
 		objFunction[i] = fitnessFunction();
+		if(objFunction[i]<bestObjFunction)
+		{
+			saveInitPopMember(i);
+		}
 	}
 }
 
@@ -226,8 +245,8 @@ void serialGA::operate()
 		return;
 	}
 #if DEBUG_STATEMENTS
-	cout<<"The read finalTempData matrix is::"<<endl;
-	printMatrix(finalTempData);
+	cout<<"The read refTempData matrix is::"<<endl;
+	printMatrix(refTempData);
 #endif
 
 	//initialize the population
@@ -258,12 +277,14 @@ void serialGA::operate()
 				calculateTemp(0.0,j);
 
 				nextObjFunction[j] = fitnessFunction();
-				if(nextObjFunction[j]>bestObjFunction)
+				if(nextObjFunction[j]<bestObjFunction)
 				{
 					savePopMember(j);
 				}
 			}
 		}
+
+		bestMemberRMSE[i] = bestObjFunction;
 
 		//copy the population and objective function to next population
 		nextObjFunction.swap(objFunction);
@@ -285,6 +306,15 @@ void serialGA::printOutput()
 		}
 		cout<<endl;
 	}
+#if DEBUG_STATEMENTS
+	cout<<"Writing best RMSE for each generation to a file"<<endl;
+	fstream bestRMSE("bestRMSE.csv",ios::out);
+	for(int i=0;i<numGens;i++)
+	{
+		bestRMSE<<i<<","<<bestMemberRMSE[i]<<endl;
+	}
+	bestRMSE.close();
+#endif
 }
 
 void serialGA::savePopMember(int myIndex)
