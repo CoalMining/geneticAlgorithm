@@ -3,7 +3,7 @@
 ############ g++ main.cpp serialGA.h -o serial ###########
 ##########################################################
 CC=g++
-MPICC=mpicc
+MPICC=mpic++
 DEPS=parallelGA.h
 CFLAGS=
 OBJ=parallelGA.o main.o
@@ -11,5 +11,5 @@ OBJ=parallelGA.o main.o
 %.o: %.cpp $(DEPS)
 	$(MPICC) -c -o $@ $< $(CFLAGS)
 
-serial: $(OBJ)
+parallel: $(OBJ)
 	$(MPICC) -o $@ $^ $(CFLAGS)
