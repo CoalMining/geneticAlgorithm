@@ -1,4 +1,4 @@
-#include "serialGA.h"
+#include "parallelGA.h"
 
 //this is the generator function to generate random double number
 double generator()
