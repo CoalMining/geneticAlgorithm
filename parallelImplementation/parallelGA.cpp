@@ -40,6 +40,8 @@ void serialGA::defineParameters()
 	bestMemberRMSE.resize(numGens,0);
 
 	bestObjFunction = std::numeric_limits<double>::max();
+	bestObjFunctions.resize(numProcesses);
+	generate(bestObjFunctions.begin(),bestObjFunctions.end(),std::numeric_limits<double>::max());
 
 #if DEBUG_STATEMENTS
 	cout<<"Defining the parameters successful.."<<endl;
@@ -53,6 +55,7 @@ void serialGA::saveMatrix(const vector<double> &source, vector<double> &destinat
 		destination[i] = source[i];
 	}
 }
+
 //read fron file fromFile to the matrix
 // number of items read will be d1*d2
 bool serialGA::readMatrix(vector<double> &matrix,string fromFile)
@@ -241,84 +244,180 @@ void serialGA::operate()
 	cout<<"Operate function called"<<endl;
 #endif
 
-	//make sure that the file names are there
-	if(initialTempFile==""||refTempFile=="")
+	//read at process 0 and broadcast to all other processes
+	if(myProcessRank==0)
 	{
-		cout<<"The file names are empty...Please provide "<<endl;
-		initialTempFile = "U_InitialTemp.dat";
-		cout<<"\n:Initial Temp file name is "<<initialTempFile<<endl;
-		refTempFile = "U_FinalTemp.dat";
-		cout<<"\n:Reference Temp file name is "<<refTempFile<<endl;
+		//make sure that the file names are there
+		if(initialTempFile==""||refTempFile=="")
+		{
+			cout<<"The file names are empty...Please provide "<<endl;
+			initialTempFile = "U_InitialTemp.dat";
+			cout<<"\n:Initial Temp file name is "<<initialTempFile<<endl;
+			refTempFile = "U_FinalTemp.dat";
+			cout<<"\n:Reference Temp file name is "<<refTempFile<<endl;
+		}
+
+		//read the data from files
+		if(!readMatrix(initialTempData,initialTempFile))
+		{
+			cout<<"Initial temperature matrix read unsuccessful...."<<endl;
+			return;
+		}
+#if DEBUG_STATEMENTS
+		cout<<"The read initialTempData matrix is::"<<endl;
+		printMatrix(initialTempData);
+#endif
+		if(!readMatrix(refTempData,refTempFile))
+		{
+			cout<<"Reference temperature matrix read unsuccessful...."<<endl;
+			return;
+		}
+#if DEBUG_STATEMENTS
+		cout<<"The read refTempData matrix is::"<<endl;
+		printMatrix(refTempData);
+#endif
+
+		//initialize the population
+		// with random values for the first generation, other generations will derive from this generaiton
+		initPopulation();
 	}
 
-	//read the data from files
-	if(!readMatrix(initialTempData,initialTempFile))
-	{
-		cout<<"Initial temperature matrix read unsuccessful...."<<endl;
-		return;
-	}
-#if DEBUG_STATEMENTS
-	cout<<"The read initialTempData matrix is::"<<endl;
-	printMatrix(initialTempData);
-#endif
-	if(!readMatrix(refTempData,refTempFile))
-	{
-		cout<<"Reference temperature matrix read unsuccessful...."<<endl;
-		return;
-	}
-#if DEBUG_STATEMENTS
-	cout<<"The read refTempData matrix is::"<<endl;
-	printMatrix(refTempData);
-#endif
+	//send the initial and final temp data to all the processes
+	MPI_Bcast(&initialTempData,initialTempData.size(),MPI_DOUBLE,0,MPI_COMM_WORLD);
+	MPI_Bcast(&finalTempData,initialTempData.size(),MPI_DOUBLE,0,MPI_COMM_WORLD);
 
-	//initialize the population
-	// with random values for the first generation, other generations will derive from this generaiton
-	initPopulation();
+	//send the initial population to other processes
+	MPI_Bcast(&population,population.size(),MPI_DOUBLE,0,MPI_COMM_WORLD);
+	//send the objective function to other processes
+	MPI_Bcast(&objFunction,objFunction.size(),MPI_DOUBLE,0,MPI_COMM_WORLD);
+	MPI_Bcast(&bestObjFunction,1,MPI_DOUBLE,0,MPI_COMM_WORLD);
+
+#if DEBUG_STATEMENTS
+	char checkInput = 0;
+	srand(time(0));
+	int procTemp1 = rand()%numProcesses;
+	int procTemp2 = rand()%numProcesses;
+	int popIndexTemp = rand()%popSize;
+	if(myProcessRank==0)
+	{
+		cout<<"Broadcast to other processes completed"<<endl;
+		cout<<"Checking one random instance "<< popIndexTemp<<" of population two random processes"<< procTemp1<<" and "<<procTemp2<<" to verify"<<endl;
+	}
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(myProcessRank==procTemp1)
+	{
+		cout<<"Printing population from rank..:"<<myProcessRank<<endl;
+		for(int i=0;i<dim1;i++)
+		{
+			for(int j=0;j<dim2;j++)
+			{
+				cout<<population[(popIndexTemp*dim1*dim2)+(i*dim2+j)]<<" ";
+			}
+			cout<<endl;
+		}
+	}
+	MPI_Barrier(MPI_COMM_WORLD);
+	if(myProcessRank==procTemp2)
+	{
+		cout<<"Printing population from rank..:"<<myProcessRank<<endl;
+		for(int i=0;i<dim1;i++)
+		{
+			for(int j=0;j<dim2;j++)
+			{
+				cout<<population[(popIndexTemp*dim1*dim2)+(i*dim2+j)]<<" ";
+			}
+			cout<<endl;
+		}
+	}
+	MPI_Barrier(MPI_COMM_WORLD);
+	checkInput = getchar();
+#endif
 
 	int parentIndex1,parentIndex2;
+	int populationPerProcess = (popSize/numProcesses);
+	int myPopulationStartIndex = myProcessRank*populationPerProcess;
+	int myPopulationEndIndex = (myProcessRank+1)*populationPerProcess;		
+
 	//perform main genetic algorithm operations here
 	//the operation will go for numGens times so..
 	for(int i=0;i<numGens;i++)
 	{
 
 #if DEBUG_STATEMENTS
-		cout<<"*********************************************"<<endl;
-		cout<<"*********Generation "<<i<<" started**********"<<endl;
-		cout<<"*********************************************"<<endl;
+		if(myProcessRank==0)
+		{
+			cout<<"*********************************************"<<endl;
+			cout<<"*********Generation "<<i<<" started**********"<<endl;
+			cout<<"*********************************************"<<endl;
+		}
 #endif
-		//for the first member of this generation, let us copy the best member from the previous generation
-		//this method is called elitism
-		copyPrevBest(0);
-
 		//perform for each member of the current generation ie for each population
 		//for all the other members of the population, perform GA
-		for(int j=1;j<popSize;j++)
+		for(int j=myPopulationStartIndex;j<myPopulationEndIndex;j++)
 		{
-			//first select best parents
-			selectParents(parentIndex1,parentIndex2,j);
-			crossOver(parentIndex1,parentIndex2,j);
-			mutate(j);
-			calculateTemp(0.0,j);
-
-			nextObjFunction[j] = fitnessFunction();
-			if(nextObjFunction[j]<bestObjFunction)
+			if(j==0)
 			{
+				//for the first member of this generation, let us copy the best member from the previous generation
+				//this method is called elitism
+				copyPrevBest(0);
+			}else{
+				//first select best parents
+				selectParents(parentIndex1,parentIndex2,j);
+				crossOver(parentIndex1,parentIndex2,j);
+				mutate(j);
+				calculateTemp(0.0,j);
+
+				nextObjFunction[j] = fitnessFunction();
+				if(nextObjFunction[j]<bestObjFunction)
+				{
 #if DEBUG_STATEMENTS
-				cout<<"The best member is changed...index is "<<j<<" and fitness value is "<<nextObjFunction[j]<<endl;
+					cout<<"The best member is changed...index is "<<j<<" and fitness value is "<<nextObjFunction[j]<<endl;
 #endif
-				savePopMember(j);
+					savePopMember(j);
+				}
 			}
 		}
 
-		bestMemberRMSE[i] = bestObjFunction;
+		bestObjFunctions[myProcessRank] = bestObjFunction;
 
+		//broadcast the population data to all other processes
+		MPI_Barrier(MPI_COMM_WORLD);
+		for(int idx = 0;idx<numProcesses;idx++)
+		{
+			int bcastStartIndex = idx*dim1*dim2*populationPerProcess;
+			MPI_Bcast(&nextPopulation[bcastStartIndex],populationPerProcess*dim1*dim2,MPI_DOUBLE,idx,MPI_COMM_WORLD);	
+			MPI_Bcast(&nextObjFunction[populationPerProcess*idx],populationPerProcess,MPI_DOUBLE,idx,MPI_COMM_WORLD);	
+			MPI_Bcast(&bestObjFunctions[idx],1,MPI_DOUBLE,idx,MPI_COMM_WORLD);	
+#if DEBUG_STATEMENTS
+			if(myProcessRank==idx)
+			{
+				cout<<"Broadcasting next population and next object function from process"<< myProcessRank<<" to all other processes completed"<<endl;
+			}
+#endif	
+		}
+
+		//in rank=0, find the least of the objective functions and send again to all other processes
+		int minPosition;
+		if(myProcessRank==0)
+		{
+			minPosition = min_element(bestObjFunctions.begin(),bestObjFunctions.end())-bestObjFunctions.begin();
+		}
+		MPI_Bcast(&minPosition,1,MPI_INT,0,MPI_COMM_WORLD);	
+		bestObjFunction = bestObjFunctions[minPosition];		
+		MPI_Bcast(&bestMember,dim1*dim2,MPI_DOUBLE,minPosition,MPI_COMM_WORLD);
 		//copy the population and objective function to next population
 		nextObjFunction.swap(objFunction);
 		nextPopulation.swap(population);
+
+		MPI_Barrier(MPI_COMM_WORLD);
+
 	}
 #if DEBUG_STATEMENTS
-	cout<<"The final best approximation of temperature is "<<endl;
-	printMatrix(bestFinalTempApprox);
+	if(myProcessRank==0)
+	{
+		cout<<"The final best approximation of temperature is "<<endl;
+		printMatrix(bestFinalTempApprox);
+	}
 #endif
 }
 
@@ -356,7 +455,7 @@ void serialGA::savePopMember(int myIndex)
 	{
 		bestMember[i] = nextPopulation[startIndex+i];
 	}
-	bestObjFunction = nextObjFunction[myIndex];
+	bestObjFunctions[myProcessRank] = nextObjFunction[myIndex];
 }
 
 void serialGA::mutate(int myIndex)

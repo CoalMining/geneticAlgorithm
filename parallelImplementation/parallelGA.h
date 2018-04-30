@@ -4,6 +4,7 @@
 #define DEBUG_STATEMENTS 1
 
 #include <iostream>
+#include <mpi.h>
 #include <string>
 #include <limits>
 #include <cmath>
@@ -25,13 +26,19 @@ private:
 
 	vector<double> initialTempData,refTempData,tempTempData,finalTempData,bestFinalTempApprox;
 	vector<double> population,objFunction,nextPopulation,nextObjFunction;
-	vector<double> bestMember,bestMemberRMSE;
+	vector<double> bestMember,bestMemberRMSE,bestObjFunctions;
+	int numProcesses,myProcessRank;
+
 public:	
 	serialGA()
 	{
 		defineParameters();
 	}
 	serialGA(string f1,string f2):initialTempFile(f1),refTempFile(f2)
+	{
+		defineParameters();
+	}
+	serialGA(string f1,string f2,int totalProcesses,int myRank):initialTempFile(f1),refTempFile(f2),numProcesses(totalProcesses),myProcessRank(myRank)
 	{
 		defineParameters();
 	}
